@@ -1,5 +1,5 @@
-//Linea de comunicacion serial
 
+//Linea de comunicacion serial
 class StreamL {
 private:
   void testTime();
@@ -30,7 +30,7 @@ public:
   }
   
   bool transmitSample(char sample);
-  bool receiveSample(char* sample);
+  bool receiveSample(unsigned char* sample);
   
   //bool transmitString(string S);
 
@@ -48,7 +48,7 @@ void StreamL::testTime() {
   
   long t2 = micros();
   
-  dtime = 1.0f/(float)bitRate - (float)(t2 - t1)/100.0f;
+  dtime = 1000000.0/(float)bitRate - (float)(t2 - t1)/100.0f;
   
   digitalWrite(sgn, LOW);  
     
@@ -64,7 +64,6 @@ bool StreamL::transmitSample(char sample) {
   
   bool bits[8];
   char buffer = sample;
-  
   //1º transformar sample al array bits[]
   for (int i=0;i<8;i++) {
   
@@ -76,7 +75,7 @@ bool StreamL::transmitSample(char sample) {
   
   //2º transmitir los 8 bits
   digitalWrite(sgn, HIGH);
-  for (int i=7;i>=0;i++) {
+  for (int i=0;i<8;i++) {
   
     digitalWrite(tx, bits[i]);
     delayMicroseconds(dtime);
@@ -88,23 +87,25 @@ bool StreamL::transmitSample(char sample) {
   digitalWrite(sgn, LOW);
   
   isBusy = false;
+  /*for (int i=0; i<8; i++)
+    Serial.print(bits[i]);
+  Serial.println();*/
   
   return true;
   
 
 }
 
-bool StreamL::receiveSample(char* sample) {
+bool StreamL::receiveSample(unsigned char* sample) {
 
   bool bits[8];
-  char buffer = 0;
+  unsigned char buffer = 0;
   char buffer_int = 1;
   for (int i=0;i<8;i++) bits[i] = 0;
   
   //Esperar a que el pin sgn se ponga en 5V
-  while(digitalRead(sgn) == 0) {delayMicroseconds(5);}
-  delayMicroseconds(10);
-  
+  while(digitalRead(sgn) == 0);// {delayMicroseconds(5);}
+  delayMicroseconds(15);
   for (int i=0;i<8;i++) {
   
     bits[i] = digitalRead(rx);
@@ -113,7 +114,8 @@ bool StreamL::receiveSample(char* sample) {
   
   }
   
-  delayMicroseconds(15);
+  //Delay que depende de la bitRate (fine-tune manual)
+  delayMicroseconds(12);
   
   if (digitalRead(sgn) == 1) return false;
   
@@ -123,78 +125,123 @@ bool StreamL::receiveSample(char* sample) {
     buffer_int *= 2;
   
   }
-  
   (*sample) = buffer;
+
+  /*for (int i=0;i<8;i++)
+    Serial.print(bits[i]);
+  Serial.println();*/
   
   return true;
 
 }
 
-/*bool StreamL::transmitString(string S) {
-
-  
-
-}*/
 
 /*
 //------------------------------------------------------------------
-//Variables globales
-Stream ArduinoProMini;
-int global_bitRate = 3000;
+//Emisor
+StreamL ArduinoProMini;
+int global_bitRate = 31250;
   
-  
-char sample;
+float num;
+unsigned char sample;
 float t, freq, ampl;
-
-
 void setup() {
   
   //Iniciar comunicacion con Pro Mini
-  ArduinoProMini.init(15, 16, 17, global_bitRate, true);
+  ArduinoProMini.init(28, 26, 24, global_bitRate, true);
   //ArduinoProMini.testdtime(); --> no se puede
   
   //Iniciar variables
   sample = 0;
   t = 0.0;
-  freq = 0.1;
+  freq = 0.05;
   ampl = 1.0;
+  ampl/=2.0;
+  Serial.begin(9600);
   
 }
-
-
+int res = 50;
+int maximo = 120;
 void loop() {
   
   //Computar oscilador
-  float num = sin(t*freq) * ampl;
-  sample = map( num, -2.0, 2.0,  0, 255);
+  num = sin(t) * ampl +0.5;
+  sample = (char)(num * (float)maximo);
+  //sample = 50;
+  //sample = map( num, -2.0, 2.0,  0, 255);
   
   //Transmitir sample
   ArduinoProMini.transmitSample(sample);
-  
+  String s = "";
+  for (int i=0;i<(float)sample/(float)maximo*res;i++)
+    s+='0';
+  Serial.println(s);
+  t+=freq;
   //Delay
-  delay(20);
-
+  delay(100);
 }
 */
 //---------------------------------------------
-//Codigo en el Pro Mini
+//Receptor
 
 StreamL ArduinoMega;
 int pinOut = 13;
-int global_bitRate = 3000;
+int global_bitRate = 31250;
+unsigned char sample;
 
 void setup() {
-  
-  ArduinoMega.init(1, 2, 3, global_bitRate, false);
+  Serial.begin(9600);
+  ArduinoMega.init(26, 24, 28, global_bitRate, false);
   pinMode(pinOut, OUTPUT);
+  digitalWrite(pinOut,LOW);
+  delay(2000);
+  digitalWrite(pinOut,LOW);
+
+  Serial.println(ArduinoMega.dtime);
+  Serial.println("dtime");
 
 }
-
+int res = 50;
+int maximo = 120;
+float cur, cur2;
+unsigned char cbuf;
 void loop() {
 
-  char sample;
-  ArduinoMega.receiveSample(&sample);
+  if (ArduinoMega.receiveSample(&sample) == false)
+    Serial.println("ERROR ERROR");
+  String s = "";
+  /*if ((float)sample/(float)maximo*res - (float)cbuf/(float)maximo*res > 5)
+  {
+   //Error
+    char buffer = cbuf;
+    Serial.println("Before");
+    for (int i=0;i<8;i++) {
   
+      if (buffer%2) Serial.print(1);
+    else Serial.print(0);
+    buffer /= 2;
+  
+  }
+  Serial.println();
+  buffer = sample;
+    Serial.println("Actual sample");
+    for (int i=0;i<8;i++) {
+  
+      if (buffer%2) Serial.print(1);
+    else Serial.print(0);
+    buffer /= 2;
+  
+  }
+     
+
+    for(;;);
+   }*/
+  for (int i=0;i<(float)sample/(float)maximo*res;i++)
+  s+='0';
+  Serial.println(s);
+  
+  //Serial.println((int)sample);
   analogWrite(pinOut, sample);
+  cbuf = sample;
 
 }
